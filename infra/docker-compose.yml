@@ -1,0 +1,119 @@
+name: sentiment-pipeline
+
+networks:
+  pipeline_network:
+    driver: bridge
+
+volumes:
+  redpanda-data: null
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=info
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    networks:
+      - pipeline_network
+    ports:
+      - "18081:18081" # schema registry
+      - "18082:18082" # pandaproxy
+      - "19092:19092" # kafka API (host access)
+      - "19644:9644"  # admin API
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.8.3
+    container_name: redpanda-console
+    networks:
+      - pipeline_network
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8080:8080" # browse topics/messages at http://localhost:8080
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
+    container_name: topic-init
+    networks:
+      - pipeline_network
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        rpk topic create raw_posts --partitions 3 --replicas 1 --brokers redpanda:9092 || true
+        echo "topics ready:"
+        rpk topic list --brokers redpanda:9092
+    restart: "no"
+
+  producer:
+    build:
+      context: ..
+      dockerfile: producer/Dockerfile
+    container_name: producer
+    networks:
+      - pipeline_network
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  processor:
+    build:
+      context: ..
+      dockerfile: processor/Dockerfile
+    container_name: processor
+    networks:
+      - pipeline_network
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      SQLITE_PATH: /data/phase2.db
+    volumes:
+      - ../data:/data
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    restart: unless-stopped

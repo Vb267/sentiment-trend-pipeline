@@ -1,0 +1,5 @@
+quixstreams>=3.0
+vaderSentiment>=3.3
+transformers>=4.40
+torch>=2.2
+python-dotenv>=1.0
