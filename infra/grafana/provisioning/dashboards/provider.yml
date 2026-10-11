@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Dashboards-as-code: every JSON file in /var/lib/grafana/dashboards is
+# loaded on startup and re-read every 30s. Edit the JSON in git, not in the
+# UI; UI edits can't be saved over a provisioned dashboard.
+providers:
+  - name: sentiment-pipeline
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

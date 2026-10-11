@@ -6,6 +6,9 @@ networks:
 
 volumes:
   redpanda-data: null
+  clickhouse-data: null
+  grafana-data: null
+  processor-state: null
 
 services:
   redpanda:
@@ -97,6 +100,57 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    networks:
+      - pipeline_network
+    # Local-only dev credentials, set here (not from .env) so ClickHouse,
+    # Grafana and the processor can't drift apart.
+    environment:
+      CLICKHOUSE_DB: sentiment
+      CLICKHOUSE_USER: pipeline
+      CLICKHOUSE_PASSWORD: pipeline
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "8123:8123" # HTTP interface (clickhouse-connect, curl, Play UI at /play)
+      - "9000:9000" # native protocol (clickhouse-client)
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    networks:
+      - pipeline_network
+    environment:
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource 4.5.1
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/sentiment.json
+      CLICKHOUSE_DATABASE: sentiment
+      CLICKHOUSE_USER: pipeline
+      CLICKHOUSE_PASSWORD: pipeline
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000" # dashboards at http://localhost:3000 (admin/admin to edit)
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
   processor:
     build:
       context: ..
@@ -108,12 +162,20 @@ services:
       - ../.env
     environment:
       KAFKA_BROKERS: redpanda:9092
-      SQLITE_PATH: /data/phase2.db
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: pipeline
+      CLICKHOUSE_PASSWORD: pipeline
+      CLICKHOUSE_DATABASE: sentiment
     volumes:
-      - ../data:/data
+      # Quix window/trend state (RocksDB). It's also backed up to changelog
+      # topics in Redpanda, so losing this volume only costs a slower restart.
+      - processor-state:/app/state
     depends_on:
       redpanda:
         condition: service_healthy
       topic-init:
         condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
     restart: unless-stopped

@@ -26,6 +26,18 @@ class Settings:
 
     sqlite_path: str
 
+    clickhouse_host: str
+    clickhouse_port: int
+    clickhouse_user: str
+    clickhouse_password: str
+    clickhouse_database: str
+
+    window_minutes: int
+    trend_zscore_threshold: float
+    trend_baseline_windows: int
+    trend_min_baseline_windows: int
+    trend_min_count: int
+
     bluesky_wanted_collections: str
 
     reddit_client_id: str | None
@@ -44,6 +56,16 @@ def get_settings() -> Settings:
         kafka_topic_raw=os.environ.get("KAFKA_TOPIC_RAW", "raw_posts"),
         kafka_consumer_group=os.environ.get("KAFKA_CONSUMER_GROUP", "sentiment-processor"),
         sqlite_path=os.environ.get("SQLITE_PATH", "data/phase2.db"),
+        clickhouse_host=os.environ.get("CLICKHOUSE_HOST", "localhost"),
+        clickhouse_port=int(os.environ.get("CLICKHOUSE_PORT", "8123")),
+        clickhouse_user=os.environ.get("CLICKHOUSE_USER", "pipeline"),
+        clickhouse_password=os.environ.get("CLICKHOUSE_PASSWORD", "pipeline"),
+        clickhouse_database=os.environ.get("CLICKHOUSE_DATABASE", "sentiment"),
+        window_minutes=int(os.environ.get("WINDOW_MINUTES", "5")),
+        trend_zscore_threshold=float(os.environ.get("TREND_ZSCORE_THRESHOLD", "2.5")),
+        trend_baseline_windows=int(os.environ.get("TREND_BASELINE_WINDOWS", "12")),
+        trend_min_baseline_windows=int(os.environ.get("TREND_MIN_BASELINE_WINDOWS", "3")),
+        trend_min_count=int(os.environ.get("TREND_MIN_COUNT", "10")),
         bluesky_wanted_collections=os.environ.get("BLUESKY_WANTED_COLLECTIONS", "app.bsky.feed.post"),
         reddit_client_id=os.environ.get("REDDIT_CLIENT_ID") or None,
         reddit_client_secret=os.environ.get("REDDIT_CLIENT_SECRET") or None,

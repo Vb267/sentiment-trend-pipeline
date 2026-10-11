@@ -68,6 +68,21 @@ class TransformerSentimentBackend:
         return [(r["label"].lower(), float(r["score"])) for r in results]
 
 
+def signed_polarity(label: str, score: float) -> float:
+    """Collapse (label, score) into one number in [-1, 1] that can be averaged.
+
+    `score` is a magnitude/confidence, not a direction, so averaging it
+    directly would treat a confident negative the same as a confident
+    positive. Neutral counts as 0 rather than being dropped, so a window full
+    of neutral posts pulls the average toward 0, which is what it should do.
+    """
+    if label == "positive":
+        return score
+    if label == "negative":
+        return -score
+    return 0.0
+
+
 def get_sentiment_backend(name: str) -> SentimentBackend:
     if name == "vader":
         return VaderSentimentBackend()

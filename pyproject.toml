@@ -12,6 +12,7 @@ dependencies = [
     "praw>=7.7",
     "confluent-kafka>=2.3",
     "quixstreams>=3.0",
+    "clickhouse-connect>=0.8",
     "streamlit>=1.37",
     "pandas>=2.2",
 ]
